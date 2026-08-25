@@ -10,7 +10,7 @@ Ubuntu及Webots下载:
 
 - Ubuntu22.04
 - ROS2 HUMBLE
-- Webots 2023b [校内下载链接](https://pan.seu.edu.cn/#/link/5E9BFED24A5759E480F225FF70BF0596)  [Github链接](https://github.com/cyberbotics/webots/releases#release-R2023b)
+- Webots 2023b [校内下载链接](https://pan.seu.edu.cn/link/AA287928B6D7274AC29C423DBC4D7F4D85)  [Github链接](https://github.com/cyberbotics/webots/releases#release-R2023b)
 
 ### ros2安装教程
 
