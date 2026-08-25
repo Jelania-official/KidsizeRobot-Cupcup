@@ -1,6 +1,7 @@
 #VRML_SIM R2023b utf8
-EXTERNPROTO "Grass.proto"
-EXTERNPROTO "RobocupGoal.proto"
+# 用相对路径引用本地 PROTO（纯文件名写法会去官方库下载，网络差会卡住）
+EXTERNPROTO "./Grass.proto"
+EXTERNPROTO "./RobocupGoal.proto"
 # license: Apache License 2.0
 # license url: http://www.apache.org/licenses/LICENSE-2.0
 # Official soccer field for the Robocup Humanoid League 2021.

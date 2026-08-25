@@ -10,7 +10,7 @@ Ubuntu及Webots下载:
 
 - Ubuntu22.04
 - ROS2 HUMBLE
-- Webots 2023b [下载链接](https://pan.seu.edu.cn/#/link/5E9BFED24A5759E480F225FF70BF0596)
+- Webots 2023b [校内下载链接](https://pan.seu.edu.cn/#/link/5E9BFED24A5759E480F225FF70BF0596)  [Github链接](https://github.com/cyberbotics/webots/releases#release-R2023b)
 
 ### ros2安装教程
 
@@ -158,6 +158,20 @@ colcon build
 
 ## 3常见问题
 
++ 打开webots后长时间卡在Downloading assets（或一直停在加载界面），终端里controller反复打印waiting for: /tmp/webots/ph/1234/ipc/red_1后报can not connect to webots
+
+  这是因为RobocupSoccerField.proto里的EXTERNPROTO用了纯文件名写法（如"Grass.proto"），Webots在本机找不到时会去GitHub下载官方资源，网络不通就会一直卡住。如果使用代理或者网络通畅没有出现这个问题则可跳过。如果出现卡住的问题，可以参照下面解决：
+
+  仓库已改为相对路径写法，请确认你的代码与仓库一致：
+
+  ```Shell
+  head -4 src/simulation/webots/models/protos/RobocupSoccerField.proto
+  ```
+  应看到 `EXTERNPROTO "./Grass.proto"` 和 `EXTERNPROTO "./RobocupGoal.proto"`，而不是不带 `./` 的纯文件名。若不一致请改为相对路径后重新编译：
+  ```Shell
+  colcon build --packages-select webots
+  ```
+
 + 打开webots后出现如下问题
   ![输入图片说明](assets/图片2.png)
   则移动install/webots/share/webots/models/worlds里面的texture文件夹到proto文件夹中
@@ -200,7 +214,7 @@ colcon build
   ```Shell
   sudo mv /opt/ros/humble/include /home/username/    #把username改成用户名
   sudo mv /opt/ros/humble/lib /home/username/    #把username改成用户名
-  sudo cp -r /home/username/Downloads/ros2023/* /opt/ros/humble/     
+  sudo cp -r /home/username/Downloads/ros2023/*  /opt/ros/humble/     
   #把username改成用户名，前一个为下载文件的目录，根据实际情况更换
   ```
 
@@ -214,6 +228,7 @@ colcon build
   ![alt text](assets/build_problem.png)
   这是ros2025和ros2023版本差异问题。请在群中下载ros2025.zip，注意一定要在ubuntu中解压。
   输入指令
+  
   ```Shell
   sudo cp -r /home/username/Downloads/ros2025/lib/libfastrtps.so.2.6.10 /opt/ros/humble/lib/     #把username改成用户名，前一个为下载文件的目录，根据实际情况更换
   ```
