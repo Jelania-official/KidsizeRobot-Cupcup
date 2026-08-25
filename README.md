@@ -22,7 +22,7 @@ Ubuntu及Webots下载:
 wget http://fishros.com/install -O fishros && . fishros
 ```
 
-![输入图片说明](%E5%9B%BE%E7%89%871.png)
+![输入图片说明](assets/图片1.png)
 
 选择5，一键转换系统源，之后输入数字2，更换系统源并清理第三方源，输入数字2，回车，更换系统源并清理第三方源
 输入数字1，回车，添加ROS/ROS2源
@@ -159,7 +159,7 @@ colcon build
 ## 3常见问题
 
 + 打开webots后出现如下问题
-  ![输入图片说明](%E5%9B%BE%E7%89%872.png)
+  ![输入图片说明](assets/图片2.png)
   则移动install/webots/share/webots/models/worlds里面的texture文件夹到proto文件夹中
   
 + 如果启动webots后看到初始位置不正确，摄像头黑屏或者且终端打印以下内容：
