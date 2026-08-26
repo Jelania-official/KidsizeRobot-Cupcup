@@ -155,8 +155,11 @@ colcon build
   colcon build
   ```
 
-
 ## 3常见问题
+
++ 在初始化编译阶段，使用双系统需要添加很多依赖，由于不同设备需要的依赖不同，各位根据报错自行添加。
+
++ 使用双系统，50系列显卡，需要装载驱动，各位自行查阅资料装载。
 
 + 打开webots后长时间卡在Downloading assets（或一直停在加载界面），终端里controller反复打印waiting for: /tmp/webots/ph/1234/ipc/red_1后报can not connect to webots
 
