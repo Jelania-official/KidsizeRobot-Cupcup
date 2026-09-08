@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.16)
+project(cupcup_match_operator)
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_AUTOMOC ON)
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(common REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(Qt5Widgets REQUIRED)
+get_filename_component(CUPCUP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+add_executable(match_operator main.cpp
+  "${CUPCUP_ROOT}/src/gamectrl/src/ctrlwindow.cpp"
+  "${CUPCUP_ROOT}/src/gamectrl/src/ctrlwindow.hpp")
+target_include_directories(match_operator PRIVATE "${CUPCUP_ROOT}/src/gamectrl/src")
+target_link_libraries(match_operator Qt5::Widgets)
+ament_target_dependencies(match_operator rclcpp common sensor_msgs)

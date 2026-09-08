@@ -1,0 +1,9 @@
+{
+  "source": "https://data.bit-bots.de/models/2026_07_01_yoeo_x_wm/onnx/yoeo.onnx",
+  "sha256": "f25a91eccc670094c7e0f73c7650c5c47f929b11d99e2e7f17851874f0581cc6",
+  "bytes": 28358260,
+  "download_date": "2026-09-08",
+  "status": "OpenCV convolution heads validated against original ONNX on four fixtures",
+  "opencv_sha256": "3ee7c48c82e354dfb60c75939c287e2a0241bb3cf43e17495ccd64cf295c9f63",
+  "decoder_anchor": 99.99983
+}

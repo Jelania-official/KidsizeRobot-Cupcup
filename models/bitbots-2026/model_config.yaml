@@ -1,0 +1,9 @@
+detection:
+  classes:
+    - ball
+    - robot
+
+segmentation:
+  classes:
+    - background
+    - lines

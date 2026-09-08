@@ -4,5 +4,12 @@ log/
 .vscode/
 __pycache__/
 *.pyc
+.vision-deps/
+.venv-vision/
+build-ascii/
+install-ascii/
+reports/
+models/**/*.onnx
+models/**/*.pth
 Docs/
 CLAUDE.md
