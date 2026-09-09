@@ -141,7 +141,7 @@ harness = r'''
     feed(); p.loc.x=-3.0; p.tick(body,head);
     require(p.shotLaneSelected && p.shotYawOffset>0,
         "near-goal approach aims away from a goalkeeper seen on the left");
-    p.state=CupcupPlayer::SETTLE; p.entered=p.now()-1; p.stable=3;
+    p.state=CupcupPlayer::SETTLE; p.entered=p.now()-1; p.stable=3; p.leftFoot=true;
     p.ball.valid=true; p.ball.x=p.leftKickX-.08; p.ball.y=p.kickY+.08;
     p.ball.radius=.07; p.hits=5; p.seenAt=p.now();
     p.head.yaw=0; p.head.pitch=p.kickPitch; p.processed=p.sequence;

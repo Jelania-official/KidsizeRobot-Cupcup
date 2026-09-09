@@ -3,6 +3,8 @@
 #include "ctrlwindow.hpp"
 #include <sensor_msgs/msg/image.hpp>
 #include <common/msg/imu_data.hpp>
+#include <common/msg/head_angles.hpp>
+#include <common/msg/location.hpp>
 #include <fstream>
 #include <chrono>
 
@@ -14,8 +16,9 @@ int main(int argc, char** argv) {
     auto observer = std::make_shared<rclcpp::Node>("match_observer");
     common::msg::GameData game;
     common::msg::FieldData field;
-    double imageAt = -100, fieldAt = -100, imuAt = -100;
-    int images = 0, fall = 0, attempts = 0;
+    double imageAt = -100, debugAt = -100, fieldAt = -100, imuAt = -100;
+    double headAt = -100, locationAt = -100;
+    int images = 0, debugImages = 0, fall = 0, attempts = 0;
     auto epoch = std::chrono::steady_clock::now();
     auto now = [&]() {return std::chrono::duration<double>(std::chrono::steady_clock::now()-epoch).count();};
     auto gs = observer->create_subscription<common::msg::GameData>("/sensor/game", 5,
@@ -26,6 +29,12 @@ int main(int argc, char** argv) {
         [&](sensor_msgs::msg::Image::ConstSharedPtr) {++images; imageAt=now();});
     auto us = observer->create_subscription<common::msg::ImuData>("/red_1/sensor/imu", 2,
         [&](common::msg::ImuData::ConstSharedPtr m) {imuAt=now(); fall=m->fall;});
+    auto hs = observer->create_subscription<common::msg::HeadAngles>("/red_1/sensor/joint/head", 2,
+        [&](common::msg::HeadAngles::ConstSharedPtr) {headAt=now();});
+    auto ls = observer->create_subscription<common::msg::Location>("/sensor/red_1_location", 2,
+        [&](common::msg::Location::ConstSharedPtr) {locationAt=now();});
+    auto ds = observer->create_subscription<sensor_msgs::msg::Image>("/red_1/result/image", 2,
+        [&](sensor_msgs::msg::Image::ConstSharedPtr) {++debugImages; debugAt=now();});
     std::ofstream events("events.csv");
     events << "wall_seconds,event,remaining,red_score,blue_score,ball_state\n";
     auto record = [&](const std::string& what) {
@@ -40,12 +49,16 @@ int main(int argc, char** argv) {
     QObject::connect(&timer, &QTimer::timeout, [&]() {
         rclcpp::spin_some(observer);
         double t=now();
+        auto age = [t](double receivedAt) {return receivedAt < 0 ? -1.0 : t-receivedAt;};
         if (finished) return;
         if (t-lastProgress>10) {
             record("progress"); lastProgress=t;
-            std::cout << "sensor ages image=" << t-imageAt << " field=" << t-fieldAt << " imu=" << t-imuAt << " fall=" << fall << std::endl;
+            std::cout << "sensor ages image=" << age(imageAt) << " debug=" << age(debugAt)
+                      << " field=" << age(fieldAt) << " imu=" << age(imuAt) << " head=" << age(headAt)
+                      << " location=" << age(locationAt) << " fall=" << fall << std::endl;
         }
-        bool healthy = images>10 && t-imageAt<1 && t-fieldAt<1 && t-imuAt<1 && fall==0;
+        bool healthy = images>10 && debugImages>2 && t-imageAt<1 && t-debugAt<1 &&
+                       t-fieldAt<1 && t-imuAt<1 && t-headAt<1 && t-locationAt<2 && fall==0;
         if (phase==0 && healthy && t-changed>5) {
             control.OnBtnReadyClicked(); phase=1; changed=t; record("ready");
         } else if (phase==1 && healthy && t-changed>3) {
@@ -57,7 +70,8 @@ int main(int argc, char** argv) {
         }
         bool completed = game.state==game.STATE_END;
         bool smokeEnded = shortLimit>0 && t>shortLimit;
-        bool stalled = t>45 && (t-imageAt>15 || t-fieldAt>15 || t-imuAt>15);
+        bool stalled = t>45 && (t-imageAt>15 || t-debugAt>15 || t-fieldAt>15 ||
+                                t-imuAt>15 || t-headAt>15 || t-locationAt>15);
         if (completed || smokeEnded || stalled) {
             finished=true;
             if (!completed) control.OnBtnFinishClicked();

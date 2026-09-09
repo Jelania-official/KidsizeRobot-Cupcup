@@ -87,6 +87,8 @@ try:
         rclpy.spin_once(recorder,timeout_sec=0.1)
     if match.poll() is None: raise TimeoutError('Match exceeded 1100 wall seconds')
     print((report/'result.json').read_text() if (report/'result.json').exists() else 'No result generated',flush=True)
+except KeyboardInterrupt:
+    pass
 finally:
     for _,p in processes:
         if p.poll() is None: os.killpg(p.pid,signal.SIGINT)
@@ -95,4 +97,5 @@ finally:
         except subprocess.TimeoutExpired:
             os.killpg(p.pid,signal.SIGKILL);p.wait()
     for f in files:f.close()
-    recorder.destroy_node();rclpy.shutdown()
+    recorder.destroy_node()
+    if rclpy.ok(): rclpy.shutdown()

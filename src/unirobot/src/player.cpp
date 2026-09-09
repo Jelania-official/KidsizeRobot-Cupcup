@@ -128,14 +128,14 @@ int main(int argc, char ** argv)
             cv::dnn::Net ballNet;
             double imageAt = -100, imuAt = -100, headAt = -100, gameAt = -100, locAt = -100;
             double keeperAt = -100, shotYawOffset = 0;
-            double entered = 0, seenAt = -100, uprightAt = 0, lastLog = -100;
+            double entered = 0, seenAt = -100, uprightAt = 0, lastLog = -100, lastHealthLog = -100;
             double lastBearing = 0, targetYaw = 0, headYaw = 0, headPitch = 20;
             double goalX, goalYaw, yawSign, yawOffset;
             double leftKickX, rightKickX, kickY, kickPitch, minScore;
             int gameState = -1, hits = 0, keeperHits = 0, stable = 0, recoveryCount = 0;
             unsigned long sequence = 0, processed = 0;
             bool leftFoot = true, resetRequested = false, fresh = false, measured = false;
-            bool searchLowFirst = false, shotLaneSelected = false;
+            bool searchLowFirst = false, shotLaneSelected = false, preflightReported = false;
 
             double now() const {
                 return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -164,6 +164,9 @@ int main(int argc, char ** argv)
                     searchLowFirst = state == RECOVER;
                 state = next; entered = t; stable = 0;
                 RCLCPP_INFO(node->get_logger(), "strategy -> %s", name());
+                if (next == KICK)
+                    RCLCPP_INFO(node->get_logger(), "kick foot=%s lane_offset=%.1f",
+                        leftFoot ? "left" : "right", shotYawOffset);
             }
             CupcupPlayer(std::shared_ptr<rclcpp::Node> n, const std::string& robot, bool red): node(n) {
                 cv::setNumThreads(1);
@@ -399,6 +402,19 @@ int main(int argc, char ** argv)
                     }
                 }
                 bool sensors = t-imageAt < 0.7 && t-imuAt < 0.7 && t-headAt < 0.7 && t-gameAt < 1.5;
+                bool localizationFresh = t-locAt < 2.0;
+                auto sensorAge = [t](double receivedAt) { return receivedAt < 0 ? -1.0 : t-receivedAt; };
+                if (!preflightReported && sensors && localizationFresh) {
+                    RCLCPP_INFO(node->get_logger(),
+                        "preflight ready: camera imu head game location and vision pipeline active");
+                    preflightReported = true;
+                } else if ((!sensors || !localizationFresh) && t-lastHealthLog > 5.0) {
+                    RCLCPP_WARN(node->get_logger(),
+                        "preflight waiting: image=%.1fs imu=%.1fs head=%.1fs game=%.1fs location=%.1fs",
+                        sensorAge(imageAt), sensorAge(imuAt), sensorAge(headAt),
+                        sensorAge(gameAt), sensorAge(locAt));
+                    lastHealthLog = t;
+                }
                 bool fallen = imu.fall != imu.FALL_NONE;
                 if (fallen) uprightAt = t;
                 if (gameState != common::msg::GameData::STATE_PLAY || !sensors || fallen || t-uprightAt < 2.0) {
@@ -415,9 +431,10 @@ int main(int argc, char ** argv)
                     }
                     double error = wrap(targetYaw-yaw);
                     bool visible = ball.valid && t-seenAt < 0.35 && hits >= 3;
-                    if (!shotLaneSelected && (state == APPROACH || state == ORBIT) &&
-                        keeper.valid && keeperHits >= 2 && t-keeperAt < 0.35 &&
-                        t-locAt < 2.0 && std::abs(goalX-loc.x) < 2.8 && std::abs(error) < 25) {
+                    bool laneZone = (state == APPROACH || state == ORBIT) && localizationFresh &&
+                        std::abs(goalX-loc.x) < 2.8 && std::abs(error) < 25;
+                    if (!shotLaneSelected && laneZone && keeper.valid && keeperHits >= 2 &&
+                        t-keeperAt < 0.35) {
                         double keeperBearing = head.yaw +
                             std::atan((0.5-keeper.x)*2*std::tan(1.3613/2))*180/3.141592653589793;
                         // Camera bearing and field lateral direction have opposite
