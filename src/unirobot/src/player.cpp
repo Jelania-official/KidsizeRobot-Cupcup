@@ -110,6 +110,10 @@ int main(int argc, char ** argv)
                 bool valid = false;
                 double x = 0, y = 0, radius = 0, score = 0;
             } ball;
+            struct RobotDetection {
+                bool valid = false;
+                double x = 0, y = 0, width = 0, height = 0, score = 0;
+            } keeper;
             State state = WAIT;
             std::shared_ptr<rclcpp::Node> node;
             rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr cameraSub;
@@ -123,13 +127,15 @@ int main(int argc, char ** argv)
             cv::Mat frame;
             cv::dnn::Net ballNet;
             double imageAt = -100, imuAt = -100, headAt = -100, gameAt = -100, locAt = -100;
+            double keeperAt = -100, shotYawOffset = 0;
             double entered = 0, seenAt = -100, uprightAt = 0, lastLog = -100;
             double lastBearing = 0, targetYaw = 0, headYaw = 0, headPitch = 20;
             double goalX, goalYaw, yawSign, yawOffset;
             double leftKickX, rightKickX, kickY, kickPitch, minScore;
-            int gameState = -1, hits = 0, stable = 0, recoveryCount = 0;
+            int gameState = -1, hits = 0, keeperHits = 0, stable = 0, recoveryCount = 0;
             unsigned long sequence = 0, processed = 0;
             bool leftFoot = true, resetRequested = false, fresh = false, measured = false;
+            bool searchLowFirst = false, shotLaneSelected = false;
 
             double now() const {
                 return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -151,6 +157,11 @@ int main(int argc, char ** argv)
             }
             void transition(State next, double t) {
                 if (next == state) return;
+                if (next == SEARCH)
+                    // A recovery backs away from a near, occluded ball. Other
+                    // losses are normally the kickoff ball or a ball just kicked
+                    // beyond the fixed downward view.
+                    searchLowFirst = state == RECOVER;
                 state = next; entered = t; stable = 0;
                 RCLCPP_INFO(node->get_logger(), "strategy -> %s", name());
             }
@@ -219,7 +230,8 @@ int main(int argc, char ** argv)
                 ballNet.setInput(cv::dnn::blobFromImage(resized, 1.0/255.0));
                 std::vector<cv::Mat> outputs;
                 ballNet.forward(outputs, ballNet.getUnconnectedOutLayersNames());
-                Ball best; double bestRank = 0;
+                Ball best; RobotDetection bestRobot;
+                double bestRank = 0, bestRobotRank = 0;
                 auto sigmoid = [](double x) { return 1.0/(1.0+std::exp(-x)); };
                 for (const auto& output : outputs) {
                     if (output.dims != 4 || output.size[1] != 7) continue;
@@ -227,14 +239,23 @@ int main(int argc, char ** argv)
                     const float* data = output.ptr<float>();
                     for (int y=0; y<height; ++y) for (int x=0; x<width; ++x) {
                         auto value = [&](int channel) { return data[channel*height*width+y*width+x]; };
-                        double confidence = sigmoid(value(4))*sigmoid(value(5));
-                        if (confidence < 0.30 || value(5) < value(6)) continue;
+                        double objectness = sigmoid(value(4));
+                        double confidence = objectness*sigmoid(value(5));
+                        double robotConfidence = objectness*sigmoid(value(6));
+                        if (std::max(confidence, robotConfidence) < 0.30) continue;
                         double cx = (sigmoid(value(0))+x)*side/width-left;
                         double cy = (sigmoid(value(1))+y)*side/height-top;
                         double w = std::exp(value(2))*99.99983*side/416;
                         double h = std::exp(value(3))*99.99983*side/416;
                         if (!std::isfinite(w+h) || cx<0 || cy<0 || cx>=rgb.cols || cy>=rgb.rows) continue;
                         double nx=cx/rgb.cols, ny=cy/rgb.rows;
+                        double nw=w/rgb.cols, nh=h/rgb.rows;
+                        if (robotConfidence > 0.45 && value(6) > value(5) &&
+                            ny < 0.65 && nw > 0.025 && nh > 0.06 && robotConfidence > bestRobotRank) {
+                            bestRobotRank=robotConfidence;
+                            bestRobot={true,nx,ny,nw,nh,robotConfidence};
+                        }
+                        if (confidence < 0.30 || value(5) < value(6)) continue;
                         double rank=confidence;
                         if (ball.valid && now()-seenAt<0.5 && state!=SEARCH) {
                             double dx=nx-ball.x, dy=ny-ball.y;
@@ -245,6 +266,13 @@ int main(int argc, char ** argv)
                             best.radius=(w+h)/(4*rgb.cols); best.score=confidence;
                         }
                     }
+                }
+                if (bestRobot.valid) {
+                    bool consistent = keeper.valid && std::abs(bestRobot.x-keeper.x) < 0.15;
+                    keeper = bestRobot; keeperAt = now();
+                    keeperHits = consistent ? std::min(keeperHits+1, 20) : 1;
+                } else if (now()-keeperAt > 0.5) {
+                    keeper = RobotDetection(); keeperHits = 0;
                 }
                 return best;
             }
@@ -349,7 +377,9 @@ int main(int argc, char ** argv)
                 fresh = processed != sequence;
                 measured = false;
                 if (resetRequested) {
-                    ball = Ball(); hits = stable = recoveryCount = 0; seenAt = -100;
+                    ball = Ball(); keeper = RobotDetection();
+                    hits = keeperHits = stable = recoveryCount = 0;
+                    seenAt = keeperAt = -100; shotYawOffset = 0; shotLaneSelected = false;
                     headYaw = 0; headPitch = 20; targetYaw = goalYaw;
                     transition(WAIT, t); resetRequested = false; uprightAt = t;
                 }
@@ -380,11 +410,24 @@ int main(int argc, char ** argv)
                     // Coarse legal localization only steers toward the fixed attacking goal.
                     if (t-locAt < 2.0 && std::abs(goalX-loc.x) > 0.7) {
                         double geometric = std::atan2(-loc.z, std::abs(goalX-loc.x))*180/3.141592653589793;
-                        double desired = wrap(goalYaw + (goalX < 0 ? geometric : -geometric));
+                        double desired = wrap(goalYaw + (goalX < 0 ? geometric : -geometric) + shotYawOffset);
                         targetYaw = wrap(targetYaw + 0.08*wrap(desired-targetYaw));
                     }
                     double error = wrap(targetYaw-yaw);
                     bool visible = ball.valid && t-seenAt < 0.35 && hits >= 3;
+                    if (!shotLaneSelected && (state == APPROACH || state == ORBIT) &&
+                        keeper.valid && keeperHits >= 2 && t-keeperAt < 0.35 &&
+                        t-locAt < 2.0 && std::abs(goalX-loc.x) < 2.8 && std::abs(error) < 25) {
+                        double keeperBearing = head.yaw +
+                            std::atan((0.5-keeper.x)*2*std::tan(1.3613/2))*180/3.141592653589793;
+                        // Camera bearing and field lateral direction have opposite
+                        // signs while attacking the negative-X goal.  Aim for the
+                        // open side with enough separation for the 0.3 m-wide body.
+                        shotYawOffset = keeperBearing >= 0 ? 20.0 : -20.0;
+                        shotLaneSelected = true;
+                        RCLCPP_INFO(node->get_logger(), "keeper %.2f bearing %.1f -> shot offset %.1f",
+                            keeper.score, keeperBearing, shotYawOffset);
+                    }
                     if ((state == ALIGN || state == SETTLE) && t-seenAt > 0.8) {
                         // At fixed downward view, loss usually means the feet/body
                         // occlude the ball.  Restore observability before searching.
@@ -431,12 +474,14 @@ int main(int argc, char ** argv)
                             // Booster CamFindBall inspired six-point scan.  Holding each
                             // pose is more useful than continuous motion with this camera.
                             static const double scanYaw[6] = {-55, 0, 55, 55, 0, -55};
-                            static const double scanPitch[6] = {50, 50, 50, 18, 18, 18};
-                            int scan = static_cast<int>(age/1.1) % 6;
-                            headYaw = scanYaw[scan]; headPitch = scanPitch[scan];
+                            static const double highFirst[6] = {18, 18, 18, 50, 50, 50};
+                            static const double lowFirst[6] = {50, 50, 50, 18, 18, 18};
+                            int scan = static_cast<int>(age/1.0) % 6;
+                            headYaw = scanYaw[scan];
+                            headPitch = searchLowFirst ? lowFirst[scan] : highFirst[scan];
                             if (t-seenAt < 2.5) headYaw = clamp(lastBearing, -60, 60);
                             if (visible) transition(APPROACH, t);
-                            else if (age > 6.6 && (scan == 1 || scan == 4))
+                            else if (age > 6.0 && (scan == 1 || scan == 4))
                                 walk(0, 0, lastBearing < 0 ? -10 : 10);
                             break;
                         }
@@ -514,7 +559,10 @@ int main(int argc, char ** argv)
                             if (age < 1.0) {
                                 body.type = body.TASK_ACT; body.count = 1;
                                 body.actname = leftFoot ? "left_kick" : "right_kick";
-                            } else transition(VERIFY, t);
+                            } else {
+                                shotYawOffset = 0; shotLaneSelected = false;
+                                transition(VERIFY, t);
+                            }
                             break;
                         case VERIFY:
                             headYaw = 0; headPitch = kickPitch;

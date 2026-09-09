@@ -20,6 +20,8 @@ root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser()
 parser.add_argument('--smoke',type=int,default=0,help='Short diagnostic run; not a competition result')
 parser.add_argument('--domain',type=int,default=94)
+parser.add_argument('--trace-contacts',action='store_true',
+                    help='Evaluation only: use an equivalent judge that logs Webots contact truth')
 args=parser.parse_args()
 report=root/'reports'/time.strftime('%Y%m%d-%H%M%S')
 report.mkdir(parents=True)
@@ -32,14 +34,25 @@ env={**os.environ,'ROS_DOMAIN_ID':str(args.domain),'ROS_LOCALHOST_ONLY':'1',
 cache=Path(os.environ.get('CUPCUP_BUILD_DIR',str(Path.home()/'.cache/cupcup-build')))
 operator=cache/'match_operator/match_operator'
 if not operator.is_file(): raise SystemExit('Build tests/match_operator first (see development notes).')
+if args.trace_contacts:
+    trace_build=Path(os.environ.get('CUPCUP_TRACE_BUILD_DIR','/tmp/cupcup-match-trace-build'))
+    trace_binary=trace_build/'match_trace_supervisor'
+    if not (trace_build/'CMakeCache.txt').is_file():
+        subprocess.run(['cmake','-S',str(root/'tests/match_trace'),'-B',str(trace_build)],check=True)
+    subprocess.run(['cmake','--build',str(trace_build),'-j2'],check=True)
+    env['CUPCUP_SUPERVISOR_BIN']=str(trace_binary)
+    env['CUPCUP_MATCH_TRACE']=str(report/'match-trace.csv')
 metadata={'strategy_sha256':hashlib.sha256((root/'src/unirobot/src/player.cpp').read_bytes()).hexdigest(),
           'executable_sha256':hashlib.sha256((root/'install/unirobot/lib/unirobot/unirobot').read_bytes()).hexdigest(),
-          'smoke_seconds':args.smoke,'ros_domain':args.domain,'goalkeeper':'unchanged src/goalkeeper',
-          'referee':'unchanged src/simulation/controller/src/supervisor.cpp',
+          'smoke_seconds':args.smoke,'ros_domain':args.domain,
+          'goalkeeper':'unchanged src/goalkeeper',
+          'referee':'trace copy of original supervisor' if args.trace_contacts else
+                    'unchanged src/simulation/controller/src/supervisor.cpp',
           'game_control':'unchanged CtrlWindow, button slots automated by test operator'}
 model=root/'models/bitbots-2026/opencv.onnx'
 metadata['model_sha256']=hashlib.sha256(model.read_bytes()).hexdigest() if model.exists() else None
 metadata['publication_mode']=env.get('RMW_FASTRTPS_PUBLICATION_MODE','default')
+metadata['contact_truth_trace']=args.trace_contacts
 (report/'metadata.json').write_text(json.dumps(metadata,ensure_ascii=False,indent=2))
 shutil.copyfile(root/'src/unirobot/src/player.cpp',report/'player.cpp')
 processes=[];files=[]

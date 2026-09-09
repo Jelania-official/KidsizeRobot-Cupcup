@@ -47,6 +47,15 @@ harness = r'''
         require(detected.valid && std::abs(detected.x-0.625)<0.05 && std::abs(detected.y-0.59)<0.05,
             "prefer close ball over speckled white line");
     }
+    if (argc > 4) {
+        cv::Mat actual = cv::imread(argv[4]);
+        cv::cvtColor(actual, actual, cv::COLOR_BGR2RGB);
+        auto detected = p.detect(actual);
+        std::cout << "KEEPER valid=" << p.keeper.valid << " x=" << p.keeper.x
+                  << " score=" << p.keeper.score << std::endl;
+        require(detected.valid && p.keeper.valid && p.keeper.score>.45 && p.keeper.y<.4,
+            "detect ball and goalkeeper in the same near-goal frame");
+    }
     cv::Mat field(480, 640, CV_8UC3, cv::Scalar(35, 135, 40));
     cv::Mat lines = field.clone();
     cv::line(lines, {0,240}, {639,240}, cv::Scalar(255,255,255), 8);
@@ -117,8 +126,8 @@ harness = r'''
     p.state=CupcupPlayer::SEARCH; p.entered=p.now(); p.seenAt=-100;
     p.ball=CupcupPlayer::Ball(); p.frame=field.clone(); ++p.sequence;
     p.tick(body,head);
-    require(std::abs(head.yaw+55)<1 && std::abs(head.pitch-50)<1,
-        "search starts at a held lower-left scan pose");
+    require(std::abs(head.yaw+55)<1 && std::abs(head.pitch-18)<1,
+        "kickoff and distant-ball search start at a held upper-left pose");
     p.state=CupcupPlayer::APPROACH; p.entered=p.now();
     p.ball.valid=true; p.ball.x=.56; p.ball.y=.55; p.ball.radius=.03;
     p.hits=5; p.seenAt=p.now(); p.head.yaw=7; p.head.pitch=25;
@@ -126,6 +135,12 @@ harness = r'''
     p.tick(body,head);
     require(std::abs(head.yaw-7)<.1 && std::abs(head.pitch-25)<.1,
         "head tracking deadband holds a stable view");
+    p.state=CupcupPlayer::APPROACH; p.entered=p.now(); p.targetYaw=p.imu.yaw=180;
+    p.keeper={true,.35,.2,.08,.2,.8};
+    p.keeperHits=2; p.keeperAt=p.now(); p.shotLaneSelected=false; p.shotYawOffset=0;
+    feed(); p.loc.x=-3.0; p.tick(body,head);
+    require(p.shotLaneSelected && p.shotYawOffset>0,
+        "near-goal approach aims away from a goalkeeper seen on the left");
     p.state=CupcupPlayer::SETTLE; p.entered=p.now()-1; p.stable=3;
     p.ball.valid=true; p.ball.x=p.leftKickX-.08; p.ball.y=p.kickY+.08;
     p.ball.radius=.07; p.hits=5; p.seenAt=p.now();
@@ -164,6 +179,10 @@ harness = r'''
     p.tick(body,head);
     require(p.state==CupcupPlayer::RECOVER && body.step<0,
         "occluded ball at the feet triggers a backward recovery");
+    p.entered=p.now()-2; p.frame=field.clone(); ++p.sequence;
+    p.tick(body,head); p.tick(body,head);
+    require(p.state==CupcupPlayer::SEARCH && std::abs(head.pitch-50)<1,
+        "near-ball recovery searches the lower row first");
     rclcpp::shutdown();
     return 0;
 '''
@@ -184,4 +203,4 @@ with tempfile.TemporaryDirectory(prefix='cupcup-regression-') as tmp:
         command.append(token); i+=1
     command += ['-o',str(binary)]
     subprocess.run(command, check=True, cwd=build)
-    subprocess.run([str(binary), *(sys.argv[1:] or [str(root/'tests/fixtures/webots_initial_rgb.png'), str(root/'tests/fixtures/webots_ball_on_line.jpg'), str(root/'tests/fixtures/webots_close_ball.jpg')])], check=True, env={**os.environ, 'ROS_DOMAIN_ID':'91', 'ROS_LOCALHOST_ONLY':'1', 'ROS_LOG_DIR':tmp})
+    subprocess.run([str(binary), *(sys.argv[1:] or [str(root/'tests/fixtures/webots_initial_rgb.png'), str(root/'tests/fixtures/webots_ball_on_line.jpg'), str(root/'tests/fixtures/webots_close_ball.jpg'), str(root/'tests/fixtures/webots_goalkeeper.jpg')])], check=True, env={**os.environ, 'ROS_DOMAIN_ID':'91', 'ROS_LOCALHOST_ONLY':'1', 'ROS_LOG_DIR':tmp})
