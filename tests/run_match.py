@@ -24,6 +24,7 @@ args=parser.parse_args()
 report=root/'reports'/time.strftime('%Y%m%d-%H%M%S')
 report.mkdir(parents=True)
 env={**os.environ,'ROS_DOMAIN_ID':str(args.domain),'ROS_LOCALHOST_ONLY':'1',
+     'ROS_LOG_DIR':str(report/'ros-log'),
      'RMW_FASTRTPS_PUBLICATION_MODE':'ASYNCHRONOUS',
      'CUPCUP_WEBOTS_PORT':str(12000 + args.domain),
      'FASTRTPS_DEFAULT_PROFILES_FILE':str(root/'tests/fastdds_udp.xml'),

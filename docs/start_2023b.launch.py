@@ -21,14 +21,19 @@ def generate_launch_description():
     os.environ['WEBOTS_HOME'] = webots_home
     native_lib = webots_home + '/lib/controller'
     library_path = native_lib + ':' + os.environ.get('LD_LIBRARY_PATH', '')
+    default_supervisor = os.path.join(
+        get_package_prefix('controller'), 'lib/controller', 'supervisor')
+    supervisor_bin = os.environ.get('CUPCUP_SUPERVISOR_BIN', default_supervisor)
     # Headless mode avoids Qt/rendering startup stalls during repeatable tests.
     # Camera sensors remain enabled by Webots; only GUI rendering is disabled.
     webots = WebotsLauncher(gui=False, port=webots_port, world=os.path.join(
         get_package_share_directory('webots'), 'models/worlds/sim-robot.wbt'))
     actions = [webots, Node(package='params', executable='params', output='screen')]
     for robot, executable in [('red_1', 'controller'), ('blue_1', 'controller'), ('judge', 'supervisor')]:
+        executable_path = supervisor_bin if robot == 'judge' else os.path.join(
+            get_package_prefix('controller'), 'lib/controller', executable)
         actions.append(ExecuteProcess(
-            cmd=[os.path.join(get_package_prefix('controller'), 'lib/controller', executable)],
+            cmd=[executable_path],
             name=robot + '_native_controller', output='screen',
             additional_env={
                 'WEBOTS_HOME': webots_home,

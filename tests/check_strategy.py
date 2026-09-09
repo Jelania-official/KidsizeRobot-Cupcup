@@ -66,7 +66,7 @@ harness = r'''
             "locate black/white ball at multiple sizes");
     }
     cv::Mat close = field.clone();
-    cv::Point center(int((1-p.kickX)*640), int(p.kickY*480));
+    cv::Point center(int(p.leftKickX*640), int(p.kickY*480));
     cv::circle(close, center, 50, cv::Scalar(235,235,235), -1);
     cv::circle(close, center, 16, cv::Scalar(30,30,180), -1);
     auto feed = [&]() {
@@ -127,7 +127,7 @@ harness = r'''
     require(std::abs(head.yaw-7)<.1 && std::abs(head.pitch-25)<.1,
         "head tracking deadband holds a stable view");
     p.state=CupcupPlayer::SETTLE; p.entered=p.now()-1; p.stable=3;
-    p.ball.valid=true; p.ball.x=1-p.kickX-.08; p.ball.y=p.kickY+.08;
+    p.ball.valid=true; p.ball.x=p.leftKickX-.08; p.ball.y=p.kickY+.08;
     p.ball.radius=.07; p.hits=5; p.seenAt=p.now();
     p.head.yaw=0; p.head.pitch=p.kickPitch; p.processed=p.sequence;
     p.tick(body,head);
@@ -144,6 +144,15 @@ harness = r'''
     p.tick(body,head);
     require(p.state==CupcupPlayer::ORBIT && head.yaw<20,
         "orbit recenters the head before fixed-view alignment");
+    p.state=CupcupPlayer::ORBIT; p.entered=p.now(); p.targetYaw=p.imu.yaw=180;
+    p.head.yaw=0; p.headYaw=0; p.head.pitch=25; p.headPitch=25;
+    p.frame=field.clone();
+    cv::circle(p.frame, {320,240}, 40, cv::Scalar(235,235,235), -1);
+    cv::circle(p.frame, {320,240}, 13, cv::Scalar(20,20,20), -1);
+    ++p.sequence; p.hits=5; p.seenAt=p.now();
+    p.tick(body,head);
+    require(p.state==CupcupPlayer::ORBIT && head.pitch>25,
+        "orbit lowers the head before entering calibrated fixed view");
     p.head.yaw=0; p.headYaw=0; p.ball.valid=true; p.ball.radius=.09;
     p.ball.x=.5; p.ball.y=.55; p.hits=5; p.seenAt=p.now();
     p.processed=p.sequence;
@@ -175,4 +184,4 @@ with tempfile.TemporaryDirectory(prefix='cupcup-regression-') as tmp:
         command.append(token); i+=1
     command += ['-o',str(binary)]
     subprocess.run(command, check=True, cwd=build)
-    subprocess.run([str(binary), *(sys.argv[1:] or [str(root/'tests/fixtures/webots_initial_rgb.png'), str(root/'tests/fixtures/webots_ball_on_line.jpg'), str(root/'tests/fixtures/webots_close_ball.jpg')])], check=True, env={**os.environ, 'ROS_DOMAIN_ID':'91', 'ROS_LOCALHOST_ONLY':'1'})
+    subprocess.run([str(binary), *(sys.argv[1:] or [str(root/'tests/fixtures/webots_initial_rgb.png'), str(root/'tests/fixtures/webots_ball_on_line.jpg'), str(root/'tests/fixtures/webots_close_ball.jpg')])], check=True, env={**os.environ, 'ROS_DOMAIN_ID':'91', 'ROS_LOCALHOST_ONLY':'1', 'ROS_LOG_DIR':tmp})
