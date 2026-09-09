@@ -54,7 +54,7 @@ bash docs/build_project.sh --packages-select unirobot
 ```bash
 ros2 run unirobot unirobot unirobot_1 --ros-args \
   -p attack_yaw:=180.0 -p left_kick_x:=0.40 \
-  -p kick_y:=0.62 -p kick_pitch:=60.0
+  -p kick_y:=0.80 -p kick_pitch:=60.0
 ```
 
 | 参数 | 默认 | 含义 |
@@ -62,8 +62,8 @@ ros2 run unirobot unirobot unirobot_1 --ros-args \
 | attack_yaw | 红方 180，蓝方 0 | 球场纵向的进攻朝向，单位度；不是初始朝向 |
 | imu_yaw_sign | 1 | IMU 朝向符号 |
 | imu_yaw_offset | 0 | IMU 朝向偏移，单位度 |
-| left_kick_x | 0.40 | 左脚目标球心横坐标/图像宽度；右脚取镜像 |
-| kick_y | 0.62 | 目标球心纵坐标/图像高度 |
+| left_kick_x | 0.40 | 踢球横向坐标基准；前视相机中右脚用此值，左脚取镜像 `1-x` |
+| kick_y | 0.80 | 目标球心纵坐标/图像高度；使球底缘接近脚尖 |
 | kick_pitch | 60 | 踢球对准时固定头部俯仰角，单位度 |
 | ball_min_score | 0.58 | 候选球最低评分 |
 

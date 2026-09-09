@@ -15,12 +15,15 @@ from webots_ros2_driver.webots_launcher import WebotsLauncher
 
 def generate_launch_description():
     webots_home = '/usr/local/webots'
+    webots_port = os.environ.get('CUPCUP_WEBOTS_PORT', '1234')
     if not Path(webots_home, 'lib/controller/libCppController.so').is_file():
         raise RuntimeError('Webots R2023b is required at /usr/local/webots')
     os.environ['WEBOTS_HOME'] = webots_home
     native_lib = webots_home + '/lib/controller'
     library_path = native_lib + ':' + os.environ.get('LD_LIBRARY_PATH', '')
-    webots = WebotsLauncher(world=os.path.join(
+    # Headless mode avoids Qt/rendering startup stalls during repeatable tests.
+    # Camera sensors remain enabled by Webots; only GUI rendering is disabled.
+    webots = WebotsLauncher(gui=False, port=webots_port, world=os.path.join(
         get_package_share_directory('webots'), 'models/worlds/sim-robot.wbt'))
     actions = [webots, Node(package='params', executable='params', output='screen')]
     for robot, executable in [('red_1', 'controller'), ('blue_1', 'controller'), ('judge', 'supervisor')]:
@@ -29,7 +32,7 @@ def generate_launch_description():
             name=robot + '_native_controller', output='screen',
             additional_env={
                 'WEBOTS_HOME': webots_home,
-                'WEBOTS_CONTROLLER_URL': 'ipc://1234/' + robot,
+                'WEBOTS_CONTROLLER_URL': 'ipc://' + webots_port + '/' + robot,
                 'LD_LIBRARY_PATH': library_path,
             }))
         if robot != 'judge':

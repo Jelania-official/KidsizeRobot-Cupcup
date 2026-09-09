@@ -165,7 +165,7 @@ int main(int argc, char ** argv)
                 yawSign = n->declare_parameter<double>("imu_yaw_sign", 1.0);
                 yawOffset = n->declare_parameter<double>("imu_yaw_offset", 0.0);
                 kickX = clamp(n->declare_parameter<double>("left_kick_x", 0.40), 0.3, 0.49);
-                kickY = clamp(n->declare_parameter<double>("kick_y", 0.62), 0.5, 0.85);
+                kickY = clamp(n->declare_parameter<double>("kick_y", 0.80), 0.5, 0.85);
                 kickPitch = clamp(n->declare_parameter<double>("kick_pitch", 60.0), 35, 70);
                 minScore = clamp(n->declare_parameter<double>("ball_min_score", 0.58), 0.3, 0.9);
                 // Arrival times are needed: the supplied image/IMU stamps are zero.
@@ -380,7 +380,13 @@ int main(int argc, char ** argv)
                     }
                     double error = wrap(targetYaw-yaw);
                     bool visible = ball.valid && t-seenAt < 0.35 && hits >= 3;
-                    if (state >= APPROACH && state <= SETTLE && t-seenAt > 1.2) transition(SEARCH, t);
+                    if ((state == ALIGN || state == SETTLE) && t-seenAt > 0.8) {
+                        // At fixed downward view, loss usually means the feet/body
+                        // occlude the ball.  Restore observability before searching.
+                        ++recoveryCount; transition(RECOVER, t);
+                    } else if (state >= APPROACH && state <= SETTLE && t-seenAt > 1.2) {
+                        transition(SEARCH, t);
+                    }
                     if ((state == APPROACH || state == ORBIT || state == ALIGN) && t-entered > (state == APPROACH ? 60.0 : 25.0)) {
                         ++recoveryCount; transition(RECOVER, t);
                     }
@@ -390,30 +396,43 @@ int main(int argc, char ** argv)
                         body.lateral = clamp(side, -0.025, 0.025);
                         body.turn = clamp(turn, -15, 15);
                     };
-                    // Track with the head except during the fixed-view kick alignment.
+                    // Booster CamTrackBall uses a large image deadband.  This platform
+                    // only echoes commanded head angles, so small corrections are even
+                    // more important: keep a stable view and let the body do most turns.
                     if (visible && measured && state >= APPROACH && state <= ORBIT) {
-                        // The supplied head topic echoes targets, not encoder feedback.
-                        // Apply a small image-error correction to avoid chasing delayed frames.
                         double correction = std::atan((0.5-ball.x)*2*std::tan(1.3613/2))*180/3.141592653589793;
-                        headYaw = clamp(head.yaw + clamp(correction*0.25, -3, 3), -65, 65);
-                        headPitch = clamp(head.pitch + clamp((ball.y-0.52)*5, -2, 2), 5, kickPitch);
+                        if (std::abs(ball.x-0.5) > 0.12)
+                            headYaw = clamp(head.yaw + clamp(correction/3.5, -2.5, 2.5), -60, 60);
+                        if (ball.y < 0.30 || ball.y > 0.68)
+                            headPitch = clamp(head.pitch + clamp((ball.y-0.49)*4, -1.8, 1.8), 8, kickPitch);
+                        // Before foot alignment, hand observation back from the head
+                        // to the torso gradually.  A direct jump to yaw=0 loses near balls.
+                        if (state == ORBIT && std::abs(ball.x-0.5) < 0.15)
+                            headYaw = clamp(headYaw + clamp(-headYaw*0.18, -1.5, 1.5), -60, 60);
                     }
                     age = t-entered;
                     switch (state) {
                         case SEARCH: {
-                            double phase = std::fmod(t-entered, 12.0);
-                            headYaw = 60*std::sin(phase*3.141592653589793/3.0);
-                            headPitch = phase < 6 ? 18 : 48;
-                            if (t-seenAt < 1.2) headYaw = clamp(lastBearing, -65, 65);
+                            // Booster CamFindBall inspired six-point scan.  Holding each
+                            // pose is more useful than continuous motion with this camera.
+                            static const double scanYaw[6] = {-55, 0, 55, 55, 0, -55};
+                            static const double scanPitch[6] = {50, 50, 50, 18, 18, 18};
+                            int scan = static_cast<int>(age/1.1) % 6;
+                            headYaw = scanYaw[scan]; headPitch = scanPitch[scan];
+                            if (t-seenAt < 2.5) headYaw = clamp(lastBearing, -60, 60);
                             if (visible) transition(APPROACH, t);
-                            else if (phase > 9) walk(0, 0, lastBearing < 0 ? -12 : 12);
+                            else if (age > 6.6 && (scan == 1 || scan == 4))
+                                walk(0, 0, lastBearing < 0 ? -10 : 10);
                             break;
                         }
                         case APPROACH:
                             if (visible) {
-                                double speed = ball.radius < 0.025 ? 0.04 : 0.025;
-                                if (std::abs(lastBearing) > 25) speed = 0;
-                                walk(speed, 0, lastBearing*0.45);
+                                // Radial chase: turn first for large bearings, then slow
+                                // continuously as apparent ball size grows.
+                                double speed = ball.radius < 0.025 ? 0.04 :
+                                               (ball.radius < 0.045 ? 0.028 : 0.016);
+                                if (std::abs(lastBearing) > 24) speed = 0;
+                                walk(speed, 0, lastBearing*0.40);
                                 // After a kick the head can still point down while the ball
                                 // is far away. Head pitch alone must not trigger foot alignment.
                                 if (ball.radius > 0.045) transition(ORBIT, t);
@@ -421,12 +440,17 @@ int main(int argc, char ** argv)
                             break;
                         case ORBIT:
                             if (visible) {
-                                // Turn toward the goal while sidestepping oppositely to keep the ball ahead.
-                                double turn = clamp(error*0.35, -10, 10);
-                                double side = clamp(lastBearing*0.0008 - turn*0.002, -0.025, 0.025);
-                                double forward = ball.radius < 0.04 ? 0.018 : (ball.radius > 0.075 ? -0.015 : 0);
+                                // Booster Adjust inspired radial+tangential motion.  Image
+                                // radius supplies range locally; heading error supplies the
+                                // tangent direction.  Deadbands avoid walking in place.
+                                double turn = std::abs(error) < 5 ? 0 : clamp(error*0.30, -9, 9);
+                                double side = clamp(lastBearing*0.0006 - turn*0.0018, -0.022, 0.022);
+                                double forward = clamp((0.062-ball.radius)*0.55, -0.012, 0.018);
                                 walk(forward, side, turn);
-                                if (std::abs(error) < 12 && std::abs(lastBearing) < 18) {
+                                if (std::abs(error) < 15 && std::abs(lastBearing) < 22 &&
+                                    // A ball larger than this is already under the torso in
+                                    // the fixed kick view. Back away before committing.
+                                    std::abs(head.yaw) < 8 && ball.radius > 0.050 && ball.radius < 0.078) {
                                     leftFoot = lastBearing >= 0; transition(ALIGN, t);
                                 }
                             }
@@ -434,33 +458,41 @@ int main(int argc, char ** argv)
                         case ALIGN:
                         case SETTLE: {
                             headYaw = 0; headPitch = kickPitch;
-                            double desiredX = leftFoot ? kickX : 1-kickX;
+                            // In the forward camera image, the robot's left foot is on
+                            // the right side. Mirror the physical foot into image space.
+                            double desiredX = leftFoot ? 1-kickX : kickX;
                             bool fixedView = (state == SETTLE || t-entered > 0.8) &&
                                 std::abs(head.yaw) < 5 && std::abs(head.pitch-kickPitch) < 4;
-                            bool linedUp = visible && measured && fixedView && std::abs(error) < 10 &&
-                                std::abs(ball.x-desiredX) < 0.035 && std::abs(ball.y-kickY) < 0.045 && ball.radius > 0.045;
-                            if (fresh) stable = linedUp ? stable+1 : 0;
+                            bool linedUp = visible && measured && fixedView && std::abs(error) < 13 &&
+                                std::abs(ball.x-desiredX) < 0.060 && std::abs(ball.y-kickY) < 0.070 && ball.radius > 0.048;
+                            bool holdPose = visible && fixedView && std::abs(error) < 19 &&
+                                std::abs(ball.x-desiredX) < 0.095 && std::abs(ball.y-kickY) < 0.105 && ball.radius > 0.042;
+                            if (fresh) stable = linedUp ? std::min(stable+1, 20) : (holdPose ? stable : 0);
                             if (state == SETTLE) {
-                                if (!linedUp) transition(ALIGN, t);
-                                else if (t-entered > 1.5 && stable >= 5) transition(KICK, t);
+                                if (!holdPose) transition(ALIGN, t);
+                                else if (t-entered > 0.8 && stable >= 3) transition(KICK, t);
                             } else if (visible && fixedView) {
-                                if (std::abs(error) > 22) transition(ORBIT, t);
-                                else if (stable >= 4) transition(SETTLE, t);
-                                else walk((kickY-ball.y)*0.075, (desiredX-ball.x)*0.10, error*0.25);
+                                if (std::abs(error) > 27) transition(ORBIT, t);
+                                else if (stable >= 3) transition(SETTLE, t);
+                                else walk(clamp((kickY-ball.y)*0.12, -0.015, 0.015),
+                                          clamp((desiredX-ball.x)*0.14, -0.018, 0.018), error*0.22);
                             }
                             break;
                         }
                         case KICK:
-                            // SETTLE drains the walking queue. Briefly latch one action, then clear it.
+                            // Motion only samples a new task when its joint queue drops
+                            // below five frames. Hold long enough to cross that window;
+                            // once accepted, the complete action is queued atomically.
                             headYaw = 0; headPitch = kickPitch;
-                            if (age < 0.3) {
+                            if (age < 1.0) {
                                 body.type = body.TASK_ACT; body.count = 1;
                                 body.actname = leftFoot ? "left_kick" : "right_kick";
                             } else transition(VERIFY, t);
                             break;
                         case VERIFY:
-                            headYaw = 0;
-                            if (age > 2.5) { hits = 0; transition(SEARCH, t); }
+                            headYaw = 0; headPitch = kickPitch;
+                            if (age > 1.4 && visible && ball.radius < 0.050) transition(APPROACH, t);
+                            else if (age > 2.2) { hits = 0; transition(SEARCH, t); }
                             break;
                         case RECOVER:
                             if (age < 1.5) walk(-0.02, recoveryCount%2 ? 0.018 : -0.018, 0);
@@ -476,7 +508,7 @@ int main(int argc, char ** argv)
                         cv::circle(debug, cv::Point(ball.x*debug.cols, ball.y*debug.rows),
                             int(ball.radius*debug.cols), cv::Scalar(255, 220, 0), 2);
                     }
-                    cv::drawMarker(debug, cv::Point((leftFoot?kickX:1-kickX)*debug.cols, kickY*debug.rows),
+                    cv::drawMarker(debug, cv::Point((leftFoot?1-kickX:kickX)*debug.cols, kickY*debug.rows),
                         cv::Scalar(255, 0, 0), cv::MARKER_CROSS, 16, 2);
                     std::string status = std::string(name()) + " ball=" + std::to_string(ball.score).substr(0,4) +
                         " hits=" + std::to_string(hits) + (sensors ? "" : " STALE SENSOR");

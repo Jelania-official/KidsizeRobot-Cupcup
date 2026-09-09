@@ -66,7 +66,7 @@ harness = r'''
             "locate black/white ball at multiple sizes");
     }
     cv::Mat close = field.clone();
-    cv::Point center(int(p.kickX*640), int(p.kickY*480));
+    cv::Point center(int((1-p.kickX)*640), int(p.kickY*480));
     cv::circle(close, center, 50, cv::Scalar(235,235,235), -1);
     cv::circle(close, center, 16, cv::Scalar(30,30,180), -1);
     auto feed = [&]() {
@@ -86,6 +86,8 @@ harness = r'''
     for (int i=0; i<5; ++i) { feed(); p.tick(body,head); }
     require(body.type==body.TASK_ACT && body.actname=="left_kick", "aligned ball triggers left kick");
     p.entered=p.now()-0.4; feed(); p.tick(body,head);
+    require(body.type==body.TASK_ACT, "kick remains latched across the motion queue window");
+    p.entered=p.now()-1.2; feed(); p.tick(body,head);
     require(p.state==CupcupPlayer::VERIFY && body.type==body.TASK_WALK && body.count==0,
         "kick pulse clears and enters observation");
     feed(); p.tick(body,head);
@@ -112,6 +114,47 @@ harness = r'''
     for (int i=0; i<4; ++i) { ++p.sequence; p.tick(body,head); }
     require(p.state==CupcupPlayer::APPROACH && body.step>0,
         "distant ball with lowered head continues approach after kick");
+    p.state=CupcupPlayer::SEARCH; p.entered=p.now(); p.seenAt=-100;
+    p.ball=CupcupPlayer::Ball(); p.frame=field.clone(); ++p.sequence;
+    p.tick(body,head);
+    require(std::abs(head.yaw+55)<1 && std::abs(head.pitch-50)<1,
+        "search starts at a held lower-left scan pose");
+    p.state=CupcupPlayer::APPROACH; p.entered=p.now();
+    p.ball.valid=true; p.ball.x=.56; p.ball.y=.55; p.ball.radius=.03;
+    p.hits=5; p.seenAt=p.now(); p.head.yaw=7; p.head.pitch=25;
+    p.headYaw=7; p.headPitch=25; p.measured=true; ++p.sequence; p.frame=close.clone();
+    p.tick(body,head);
+    require(std::abs(head.yaw-7)<.1 && std::abs(head.pitch-25)<.1,
+        "head tracking deadband holds a stable view");
+    p.state=CupcupPlayer::SETTLE; p.entered=p.now()-1; p.stable=3;
+    p.ball.valid=true; p.ball.x=1-p.kickX-.08; p.ball.y=p.kickY+.08;
+    p.ball.radius=.07; p.hits=5; p.seenAt=p.now();
+    p.head.yaw=0; p.head.pitch=p.kickPitch; p.processed=p.sequence;
+    p.tick(body,head);
+    require(p.state==CupcupPlayer::KICK,
+        "settle hysteresis tolerates small pose jitter and triggers kick");
+    p.state=CupcupPlayer::ORBIT; p.entered=p.now(); p.stable=0;
+    p.ball.valid=true; p.ball.x=.5; p.ball.y=.55; p.ball.radius=.065;
+    p.hits=5; p.seenAt=p.now(); p.head.yaw=20; p.head.pitch=35;
+    p.headYaw=20; p.headPitch=35;
+    p.frame=field.clone();
+    cv::circle(p.frame, {320,264}, 40, cv::Scalar(235,235,235), -1);
+    cv::circle(p.frame, {320,264}, 13, cv::Scalar(20,20,20), -1);
+    ++p.sequence;
+    p.tick(body,head);
+    require(p.state==CupcupPlayer::ORBIT && head.yaw<20,
+        "orbit recenters the head before fixed-view alignment");
+    p.head.yaw=0; p.headYaw=0; p.ball.valid=true; p.ball.radius=.09;
+    p.ball.x=.5; p.ball.y=.55; p.hits=5; p.seenAt=p.now();
+    p.processed=p.sequence;
+    p.tick(body,head);
+    require(p.state==CupcupPlayer::ORBIT && body.step<0,
+        "orbit backs away from a ball too close for the fixed kick view");
+    p.state=CupcupPlayer::ALIGN; p.entered=p.now(); p.seenAt=p.now()-1;
+    p.ball.valid=false; p.hits=0; p.processed=p.sequence;
+    p.tick(body,head);
+    require(p.state==CupcupPlayer::RECOVER && body.step<0,
+        "occluded ball at the feet triggers a backward recovery");
     rclcpp::shutdown();
     return 0;
 '''
