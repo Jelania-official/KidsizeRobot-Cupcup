@@ -112,8 +112,8 @@ harness = r'''
     cv::circle(p.frame, {320,280}, 10, cv::Scalar(235,235,235), -1);
     cv::circle(p.frame, {320,280}, 3, cv::Scalar(20,20,20), -1);
     for (int i=0; i<4; ++i) { ++p.sequence; p.tick(body,head); }
-    require(p.state==CupcupPlayer::APPROACH && body.step>0,
-        "distant ball with lowered head continues approach after kick");
+    require(p.state==CupcupPlayer::APPROACH && body.step>.045,
+        "distant ball uses the configured maximum safe forward step");
     p.state=CupcupPlayer::SEARCH; p.entered=p.now(); p.seenAt=-100;
     p.ball=CupcupPlayer::Ball(); p.frame=field.clone(); ++p.sequence;
     p.tick(body,head);

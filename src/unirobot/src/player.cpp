@@ -397,8 +397,11 @@ int main(int argc, char ** argv)
                     }
                     auto walk = [&](double forward, double side, double turn) {
                         body.count = 1;
-                        body.step = clamp(forward, -0.025, 0.04);
-                        body.lateral = clamp(side, -0.025, 0.025);
+                        // walk.conf permits 0.05 m forward and 0.03 m lateral
+                        // step gains. State-specific commands stay below those
+                        // limits near the ball.
+                        body.step = clamp(forward, -0.025, 0.05);
+                        body.lateral = clamp(side, -0.028, 0.028);
                         body.turn = clamp(turn, -15, 15);
                     };
                     // Booster CamTrackBall uses a large image deadband.  This platform
@@ -441,8 +444,8 @@ int main(int argc, char ** argv)
                             if (visible) {
                                 // Radial chase: turn first for large bearings, then slow
                                 // continuously as apparent ball size grows.
-                                double speed = ball.radius < 0.025 ? 0.04 :
-                                               (ball.radius < 0.045 ? 0.028 : 0.016);
+                                double speed = ball.radius < 0.025 ? 0.05 :
+                                               (ball.radius < 0.045 ? 0.04 : 0.022);
                                 if (std::abs(lastBearing) > 24) speed = 0;
                                 walk(speed, 0, lastBearing*0.40);
                                 // After a kick the head can still point down while the ball
@@ -456,14 +459,14 @@ int main(int argc, char ** argv)
                                 // radius supplies range locally; heading error supplies the
                                 // tangent direction.  Deadbands avoid walking in place.
                                 double turn = std::abs(error) < 5 ? 0 : clamp(error*0.30, -9, 9);
-                                double side = clamp(lastBearing*0.0006 - turn*0.0018, -0.022, 0.022);
-                                double forward = clamp((0.062-ball.radius)*0.55, -0.012, 0.018);
+                                double side = clamp(lastBearing*0.0007 - turn*0.0018, -0.025, 0.025);
+                                double forward = clamp((0.062-ball.radius)*0.75, -0.015, 0.025);
                                 // Apparent size is not a range estimate while the
                                 // head pitch is changing. In the near-fixed view a
                                 // high ball is still too far away, so keep closing.
                                 if (head.pitch > 25 && ball.y < 0.48)
                                     forward = std::max(forward,
-                                        clamp((0.48-ball.y)*0.06, 0.0, 0.018));
+                                        clamp((0.48-ball.y)*0.08, 0.0, 0.025));
                                 walk(forward, side, turn);
                                 if (std::abs(error) < 15 && std::abs(lastBearing) < 22 &&
                                     // A ball larger than this is already under the torso in
@@ -493,8 +496,13 @@ int main(int argc, char ** argv)
                             } else if (visible && fixedView) {
                                 if (std::abs(error) > 27) transition(ORBIT, t);
                                 else if (stable >= 3) transition(SETTLE, t);
-                                else walk(clamp((kickY-ball.y)*0.12, -0.015, 0.015),
-                                          clamp((desiredX-ball.x)*0.14, -0.018, 0.018), error*0.22);
+                                else {
+                                    // Reach the calibrated window quickly, then the
+                                    // proportional terms naturally fall below the
+                                    // fine-alignment step size near its center.
+                                    walk(clamp((kickY-ball.y)*0.16, -0.018, 0.025),
+                                         clamp((desiredX-ball.x)*0.18, -0.023, 0.023), error*0.24);
+                                }
                             }
                             break;
                         }
