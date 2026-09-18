@@ -11,7 +11,7 @@
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
     QApplication app(argc, argv);
-    CtrlWindow control("unirobot", "goalkeeper");
+    CtrlWindow control("cupcup", "goalkeeper");
     control.show();
     auto observer = std::make_shared<rclcpp::Node>("match_observer");
     common::msg::GameData game;

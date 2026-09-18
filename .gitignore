@@ -10,6 +10,7 @@ build-ascii/
 install-ascii/
 reports/
 models/**/*.onnx
+!models/bitbots-2026/opencv.onnx
 models/**/*.pth
 Docs/
 CLAUDE.md

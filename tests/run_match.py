@@ -42,8 +42,8 @@ if args.trace_contacts:
     subprocess.run(['cmake','--build',str(trace_build),'-j2'],check=True)
     env['CUPCUP_SUPERVISOR_BIN']=str(trace_binary)
     env['CUPCUP_MATCH_TRACE']=str(report/'match-trace.csv')
-metadata={'strategy_sha256':hashlib.sha256((root/'src/unirobot/src/player.cpp').read_bytes()).hexdigest(),
-          'executable_sha256':hashlib.sha256((root/'install/unirobot/lib/unirobot/unirobot').read_bytes()).hexdigest(),
+metadata={'strategy_sha256':hashlib.sha256((root/'src/cupcup/src/player.cpp').read_bytes()).hexdigest(),
+          'executable_sha256':hashlib.sha256((root/'install/cupcup/lib/cupcup/cupcup').read_bytes()).hexdigest(),
           'smoke_seconds':args.smoke,'ros_domain':args.domain,
           'goalkeeper':'unchanged src/goalkeeper',
           'referee':'trace copy of original supervisor' if args.trace_contacts else
@@ -54,7 +54,7 @@ metadata['model_sha256']=hashlib.sha256(model.read_bytes()).hexdigest() if model
 metadata['publication_mode']=env.get('RMW_FASTRTPS_PUBLICATION_MODE','default')
 metadata['contact_truth_trace']=args.trace_contacts
 (report/'metadata.json').write_text(json.dumps(metadata,ensure_ascii=False,indent=2))
-shutil.copyfile(root/'src/unirobot/src/player.cpp',report/'player.cpp')
+shutil.copyfile(root/'src/cupcup/src/player.cpp',report/'player.cpp')
 processes=[];files=[]
 os.environ.update(env)
 rclpy.init()
@@ -76,7 +76,7 @@ def start(command,name,workdir=root,extra=None):
 try:
     start(['ros2','launch',str(root/'docs/start_2023b.launch.py')],'simulation')
     match=start([str(operator)],'operator',report,{'QT_QPA_PLATFORM':'offscreen'})
-    start(['ros2','launch','unirobot','player_launch.py'],'player')
+    start(['ros2','launch','cupcup','player_launch.py'],'player')
     start(['ros2','launch','goalkeeper','player_launch.py'],'goalkeeper')
     print('REPORT',report,flush=True)
     deadline=time.monotonic()+1100

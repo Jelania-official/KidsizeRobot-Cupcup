@@ -11,8 +11,8 @@ import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-build = Path(os.environ.get('CUPCUP_BUILD_DIR', str(Path.home()/'.cache/cupcup-build'))) / 'unirobot'
-source = (root / 'src/unirobot/src/player.cpp').read_text()
+build = Path(os.environ.get('CUPCUP_BUILD_DIR', str(Path.home()/'.cache/cupcup-build'))) / 'cupcup'
+source = (root / 'src/cupcup/src/player.cpp').read_text()
 strategy = source[source.index('        class CupcupPlayer {'):source.index('        static CupcupPlayer strategy')]
 harness = r'''
     auto node = std::make_shared<rclcpp::Node>("strategy_regression");
@@ -187,14 +187,14 @@ harness = r'''
     return 0;
 '''
 flags = []
-for line in (build/'CMakeFiles/unirobot.dir/flags.make').read_text().splitlines():
+for line in (build/'CMakeFiles/cupcup.dir/flags.make').read_text().splitlines():
     if line.startswith(('CXX_DEFINES =', 'CXX_INCLUDES =', 'CXX_FLAGS =')):
         flags += shlex.split(line.split('=', 1)[1])
-link = shlex.split((build/'CMakeFiles/unirobot.dir/link.txt').read_text())
+link = shlex.split((build/'CMakeFiles/cupcup.dir/link.txt').read_text())
 with tempfile.TemporaryDirectory(prefix='cupcup-regression-') as tmp:
     cpp=Path(tmp)/'check.cpp'; binary=Path(tmp)/'check'
     cpp.write_text('#include "topics.hpp"\n#include <iostream>\nint main(int argc,char**argv){\nrclcpp::init(argc,argv);\n'+strategy+harness+'\n}\n')
-    command = [link[0], *flags, '-I'+str(root/'src/unirobot/src'), str(cpp)]
+    command = [link[0], *flags, '-I'+str(root/'src/cupcup/src'), str(cpp)]
     i=1
     while i<len(link):
         token=link[i]

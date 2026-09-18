@@ -18,7 +18,7 @@ python3 -m pip install --target .vision-deps 'numpy<2' onnx onnxruntime
 python3 tests/download_yoeo.py
 PYTHONPATH=.vision-deps python3 tests/convert_yoeo.py
 PYTHONPATH=.vision-deps python3 tests/evaluate_yoeo.py
-bash docs/build_project.sh --packages-select unirobot
+bash docs/build_project.sh --packages-select cupcup
 source install/setup.bash
 python3 tests/check_strategy.py
 python3 tests/run_match.py --smoke 180 --domain 97
@@ -33,4 +33,6 @@ python3 tests/run_match.py --smoke 180 --domain 97
 解码与原模型最大绝对误差小于 0.0002，双线程 CPU 推理约 60 ms。
 这不是完整数据集准确率，也不是进球验证。
 
-模型二进制和完整比赛录像保留在本地、不纳入 Git；新检出使用以上下载与转换命令复现。
+比赛提交使用已验证的 `opencv.onnx`，该文件随 `cupcup` 包纳入版本控制并由 CMake 安装到
+package share 目录。原始模型和完整比赛录像仍保留在本地；`opencv.onnx` 的 SHA-256
+记录在 `provenance.json` 中。
